@@ -222,26 +222,26 @@ class PackageFinder(object):
                 logger.warn("%s uses an insecure transport scheme (%s)." %
                             ctx)
 
+    @staticmethod
+    def _mkurl_pypi_url(url, url_name):
+        loc = posixpath.join(url, url_name)
+        # For maximum compatibility with easy_install, ensure the path
+        # ends in a trailing slash.  Although this isn't in the spec
+        # (and PyPI can handle it without the slash) some other index
+        # implementations might break if they relied on easy_install's
+        # behavior.
+        if not loc.endswith('/'):
+            loc = loc + '/'
+        return loc
+
     def find_requirement(self, req, upgrade):
-
-        def mkurl_pypi_url(url):
-            loc = posixpath.join(url, url_name)
-            # For maximum compatibility with easy_install, ensure the path
-            # ends in a trailing slash.  Although this isn't in the spec
-            # (and PyPI can handle it without the slash) some other index
-            # implementations might break if they relied on easy_install's
-            # behavior.
-            if not loc.endswith('/'):
-                loc = loc + '/'
-            return loc
-
         url_name = req.url_name
         # Only check main index if index URL is given:
         main_index_url = None
         if self.index_urls:
             # Check that we have the url_name correctly spelled:
             main_index_url = Link(
-                mkurl_pypi_url(self.index_urls[0]),
+                self._mkurl_pypi_url(self.index_urls[0], url_name),
                 trusted=True,
             )
 
@@ -253,7 +253,7 @@ class PackageFinder(object):
                 ) or req.url_name
 
         locations = [
-            mkurl_pypi_url(url)
+            self._mkurl_pypi_url(url, url_name)
             for url in self.index_urls] + self.find_links
         for version in req.absolute_versions:
             if url_name is not None and main_index_url is not None:
