@@ -235,22 +235,17 @@ class PackageFinder(object):
         return loc
 
     def find_requirement(self, req, upgrade):
-        url_name = req.url_name
         # Only check main index if index URL is given:
-        main_index_url = None
-        if self.index_urls:
-            # Check that we have the url_name correctly spelled:
-            main_index_url = Link(
-                self._mkurl_pypi_url(self.index_urls[0], url_name),
-                trusted=True,
-            )
-
-            page = self._get_page(main_index_url, req)
-            if page is None:
-                url_name = self._find_url_name(
-                    Link(self.index_urls[0], trusted=True),
-                    url_name, req
-                ) or req.url_name
+        # Check that we have the url_name correctly spelled:
+        if self.index_urls and self._get_page(Link(
+                self._mkurl_pypi_url(self.index_urls[0], req.url_name),
+        ), req) is None:
+            url_name = self._find_url_name(
+                Link(self.index_urls[0], trusted=True),
+                req.url_name, req
+            ) or req.url_name
+        else:
+            url_name = req.url_name
 
         locations = [
             self._mkurl_pypi_url(url, url_name)
