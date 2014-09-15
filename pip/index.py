@@ -255,10 +255,6 @@ class PackageFinder(object):
         locations = [
             self._mkurl_pypi_url(url, url_name)
             for url in self.index_urls] + self.find_links
-        for version in req.absolute_versions:
-            if url_name is not None and main_index_url is not None:
-                locations = [
-                    posixpath.join(main_index_url.url, version)] + locations
 
         file_locations, url_locations = self._sort_locations(locations)
         _flocations, _ulocations = self._sort_locations(self.dependency_links)
@@ -270,11 +266,6 @@ class PackageFinder(object):
 
         # We explicitly do not trust links that came from dependency_links
         locations.extend([Link(url) for url in _ulocations])
-
-        logger.debug('URLs to search for versions for %s:', req)
-        for location in locations:
-            logger.debug('* %s', location)
-            self._warn_about_insecure_transport_scheme(logger, location)
 
         found_versions = []
         found_versions.extend(
@@ -291,15 +282,6 @@ class PackageFinder(object):
                 page_versions.extend(
                     self._package_versions(page.links, req.name.lower())
                 )
-        dependency_versions = list(self._package_versions(
-            [Link(url) for url in self.dependency_links], req.name.lower()))
-        if dependency_versions:
-            logger.debug(
-                'dependency_links found: %s',
-                ', '.join([
-                    link.url for p, link, version in dependency_versions
-                ])
-            )
         file_versions = list(
             self._package_versions(
                 [Link(url) for url in file_locations],
@@ -308,28 +290,7 @@ class PackageFinder(object):
         )
         if (not found_versions
                 and not page_versions
-                and not dependency_versions
                 and not file_versions):
-            logger.critical(
-                'Could not find any downloads that satisfy the requirement %s',
-                req,
-            )
-
-            if self.need_warn_external:
-                logger.warning(
-                    "Some externally hosted files were ignored as access to "
-                    "them may be unreliable (use --allow-external %s to "
-                    "allow).",
-                    req.name,
-                )
-
-            if self.need_warn_unverified:
-                logger.warning(
-                    "Some insecure and unverifiable files were ignored"
-                    " (use --allow-unverified %s to allow).",
-                    req.name,
-                )
-
             raise DistributionNotFound(
                 'No distributions at all found for %s' % req
             )
@@ -340,40 +301,17 @@ class PackageFinder(object):
                 INSTALLED_VERSION,
                 req.satisfied_by.version,
             )]
-        if file_versions:
-            file_versions.sort(reverse=True)
-            logger.debug(
-                'Local files found: %s',
-                ', '.join([
-                    url_to_path(link.url)
-                    for _, link, _ in file_versions
-                ])
-            )
         # this is an intentional priority ordering
         all_versions = installed_version + file_versions + found_versions \
-            + page_versions + dependency_versions
+            + page_versions
         applicable_versions = []
         for (parsed_version, link, version) in all_versions:
             if version not in req.req:
-                logger.debug(
-                    "Ignoring link %s, version %s doesn't match %s",
-                    link,
-                    version,
-                    ','.join([''.join(s) for s in req.req.specs]),
-                )
                 continue
-            elif (is_prerelease(version)
-                    and not (self.allow_all_prereleases or req.prereleases)):
+            elif (is_prerelease(version) and not (req.prereleases)):
                 # If this version isn't the already installed one, then
                 #   ignore it if it's a pre-release.
-                if link is not INSTALLED_VERSION:
-                    logger.debug(
-                        "Ignoring link %s, version %s is a pre-release (use "
-                        "--pre to allow).",
-                        link,
-                        version,
-                    )
-                    continue
+                continue
             applicable_versions.append((parsed_version, link, version))
         applicable_versions = self._sort_versions(applicable_versions)
         existing_applicable = bool([
@@ -388,62 +326,14 @@ class PackageFinder(object):
                     'satisfies requirement',
                     req.satisfied_by.version,
                 )
-            else:
-                logger.debug(
-                    'Existing installed version (%s) satisfies requirement '
-                    '(most up-to-date version is %s)',
-                    req.satisfied_by.version,
-                    applicable_versions[0][2],
-                )
             return None
         if not applicable_versions:
-            logger.critical(
-                'Could not find a version that satisfies the requirement %s '
-                '(from versions: %s)',
-                req,
-                ', '.join(
-                    sorted(set([
-                        version
-                        for parsed_version, link, version in all_versions
-                    ]))),
-            )
-
-            if self.need_warn_external:
-                logger.warning(
-                    "Some externally hosted files were ignored as access to "
-                    "them may be unreliable (use --allow-external to allow)."
-                )
-
-            if self.need_warn_unverified:
-                logger.warning(
-                    "Some insecure and unverifiable files were ignored"
-                    " (use --allow-unverified %s to allow).",
-                    req.name,
-                )
-
             raise DistributionNotFound(
                 'No distributions matching the version for %s' % req
             )
         if applicable_versions[0][1] is INSTALLED_VERSION:
             # We have an existing version, and its the best version
-            logger.debug(
-                'Installed version (%s) is most up-to-date (past versions: '
-                '%s)',
-                req.satisfied_by.version,
-                ', '.join([
-                    version for parsed_version, link, version
-                    in applicable_versions[1:]
-                ]) or 'none'),
             raise BestVersionAlreadyInstalled
-        if len(applicable_versions) > 1:
-            logger.debug(
-                'Using version %s (newest of versions: %s)',
-                applicable_versions[0][2],
-                ', '.join([
-                    version for parsed_version, link, version
-                    in applicable_versions
-                ])
-            )
 
         selected_version = applicable_versions[0][1]
 
@@ -451,13 +341,6 @@ class PackageFinder(object):
                 and not selected_version.verifiable):
             logger.warning(
                 "%s is potentially insecure and unverifiable.", req.name,
-            )
-
-        if selected_version._deprecated_regex:
-            warnings.warn(
-                "%s discovered using a deprecated method of parsing, in the "
-                "future it will no longer be discovered." % req.name,
-                RemovedInPip17Warning,
             )
 
         return selected_version
