@@ -1,5 +1,4 @@
 from __future__ import absolute_import, division, unicode_literals
-from pip._vendor.six import with_metaclass
 
 import types
 
@@ -24,8 +23,11 @@ def parse(doc, treebuilder="etree", encoding=None,
           namespaceHTMLElements=True):
     """Parse a string or file-like object into a tree"""
     tb = treebuilders.getTreeBuilder(treebuilder)
+    print 'DEBUG parse:', 2
     p = HTMLParser(tb, namespaceHTMLElements=namespaceHTMLElements)
-    return p.parse(doc, encoding=encoding)
+    print 'DEBUG parse:', 3
+    result = p.parse(doc, encoding=encoding)
+    return result
 
 
 def parseFragment(doc, container="div", treebuilder="etree", encoding=None,
@@ -33,18 +35,6 @@ def parseFragment(doc, container="div", treebuilder="etree", encoding=None,
     tb = treebuilders.getTreeBuilder(treebuilder)
     p = HTMLParser(tb, namespaceHTMLElements=namespaceHTMLElements)
     return p.parseFragment(doc, container=container, encoding=encoding)
-
-
-def method_decorator_metaclass(function):
-    class Decorated(type):
-        def __new__(meta, classname, bases, classDict):
-            for attributeName, attribute in classDict.items():
-                if isinstance(attribute, types.FunctionType):
-                    attribute = function(attribute)
-
-                classDict[attributeName] = attribute
-            return type.__new__(meta, classname, bases, classDict)
-    return Decorated
 
 
 class HTMLParser(object):
@@ -74,8 +64,11 @@ class HTMLParser(object):
         self.tokenizer_class = tokenizer
         self.errors = []
 
+        print 'DEBUG HTMLParser: getting phases'
+        phases = getPhases(debug)
+        print 'DEBUG HTMLParser: got phases'
         self.phases = dict([(name, cls(self, self.tree)) for name, cls in
-                            getPhases(debug).items()])
+                            phases.items()])
 
     def _parse(self, stream, innerHTML=False, container="div",
                encoding=None, parseMeta=True, useChardet=True, **kwargs):
@@ -408,6 +401,7 @@ class HTMLParser(object):
 
 
 def getPhases(debug):
+    print 'getPhases:', 'log'
     def log(function):
         """Logger that records which phase processes each token"""
         type_names = dict((value, key) for key, value in
@@ -433,13 +427,12 @@ def getPhases(debug):
                 return function(self, *args, **kwargs)
         return wrapped
 
+    print 'getPhases:', 'getMeta'
     def getMetaclass(use_metaclass, metaclass_func):
-        if use_metaclass:
-            return method_decorator_metaclass(metaclass_func)
-        else:
-            return type
+        return type
 
-    class Phase(with_metaclass(getMetaclass(debug, log))):
+    print 'getPhases:', 'Phase'
+    class Phase(object):
         """Base class for helper object that implements each phase of processing
         """
 
@@ -480,6 +473,7 @@ def getPhases(debug):
         def processEndTag(self, token):
             return self.endTagHandler[token["name"]](token)
 
+    print 'getPhases:', 'Init'
     class InitialPhase(Phase):
         def processSpaceCharacters(self, token):
             pass
@@ -609,6 +603,7 @@ def getPhases(debug):
             self.anythingElse()
             return True
 
+    print 'getPhases:', 'BeforeH'
     class BeforeHtmlPhase(Phase):
         # helper methods
         def insertHtmlElement(self):
@@ -644,6 +639,7 @@ def getPhases(debug):
                 self.insertHtmlElement()
                 return token
 
+    print 'getPhases:', 'BeforeHead'
     class BeforeHeadPhase(Phase):
         def __init__(self, parser, tree):
             Phase.__init__(self, parser, tree)
@@ -690,6 +686,7 @@ def getPhases(debug):
             self.parser.parseError("end-tag-after-implied-root",
                                    {"name": token["name"]})
 
+    print 'getPhases:', 'InHead'
     class InHeadPhase(Phase):
         def __init__(self, parser, tree):
             Phase.__init__(self, parser, tree)
@@ -789,7 +786,9 @@ def getPhases(debug):
     # implement this phase.
     #
     # class InHeadNoScriptPhase(Phase):
+    print 'getPhases:', 'AfterHead'
     class AfterHeadPhase(Phase):
+        print 'AfterHead', 1
         def __init__(self, parser, tree):
             Phase.__init__(self, parser, tree)
 
@@ -807,26 +806,32 @@ def getPhases(debug):
                                                           self.endTagHtmlBodyBr)])
             self.endTagHandler.default = self.endTagOther
 
+        print 'AfterHead', 2
         def processEOF(self):
             self.anythingElse()
             return True
 
+        print 'AfterHead', 3
         def processCharacters(self, token):
             self.anythingElse()
             return token
 
+        print 'AfterHead', 4
         def startTagHtml(self, token):
             return self.parser.phases["inBody"].processStartTag(token)
 
+        print 'AfterHead', 5
         def startTagBody(self, token):
             self.parser.framesetOK = False
             self.tree.insertElement(token)
             self.parser.phase = self.parser.phases["inBody"]
 
+        print 'AfterHead', 6
         def startTagFrameset(self, token):
             self.tree.insertElement(token)
             self.parser.phase = self.parser.phases["inFrameset"]
 
+        print 'AfterHead', 7
         def startTagFromHead(self, token):
             self.parser.parseError("unexpected-start-tag-out-of-my-head",
                                    {"name": token["name"]})
@@ -837,25 +842,33 @@ def getPhases(debug):
                     self.tree.openElements.remove(node)
                     break
 
+        print 'AfterHead', 8
         def startTagHead(self, token):
             self.parser.parseError("unexpected-start-tag", {"name": token["name"]})
 
+        print 'AfterHead', 9
         def startTagOther(self, token):
             self.anythingElse()
             return token
 
+        print 'AfterHead', 10
         def endTagHtmlBodyBr(self, token):
             self.anythingElse()
             return token
 
+        print 'AfterHead', 2
         def endTagOther(self, token):
             self.parser.parseError("unexpected-end-tag", {"name": token["name"]})
 
+        print 'AfterHead', 2
         def anythingElse(self):
             self.tree.insertElement(impliedTagToken("body", "StartTag"))
             self.parser.phase = self.parser.phases["inBody"]
             self.parser.framesetOK = True
 
+        print 'AfterHead', 'END'
+
+    print 'getPhases:', 'InBody'
     class InBodyPhase(Phase):
         # http://www.whatwg.org/specs/web-apps/current-work/#parsing-main-inbody
         # the really-really-really-very crazy mode
@@ -2671,6 +2684,7 @@ def getPhases(debug):
         def processEndTag(self, token):
             self.parser.parseError("expected-eof-but-got-end-tag",
                                    {"name": token["name"]})
+    print 'getPhases:', 'returning...'
 
     return {
         "initial": InitialPhase,

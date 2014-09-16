@@ -234,7 +234,7 @@ class PackageFinder(object):
             loc = loc + '/'
         return loc
 
-    def find_requirement(self, req, upgrade):
+    def _init_locations1(self, req):
         # Only check main index if index URL is given:
         # Check that we have the url_name correctly spelled:
         if self.index_urls and self._get_page(Link(
@@ -247,20 +247,30 @@ class PackageFinder(object):
         else:
             url_name = req.url_name
 
-        locations = [
+        return [
             self._mkurl_pypi_url(url, url_name)
             for url in self.index_urls] + self.find_links
 
+    def _init_locations2(self, locations):
         file_locations, url_locations = self._sort_locations(locations)
         _flocations, _ulocations = self._sort_locations(self.dependency_links)
         file_locations.extend(_flocations)
 
         # We trust every url that the user has given us whether it was given
         #   via --index-url or --find-links
-        locations = [Link(url, trusted=True) for url in url_locations]
+        url_locations = [Link(url, trusted=True) for url in url_locations]
 
         # We explicitly do not trust links that came from dependency_links
-        locations.extend([Link(url) for url in _ulocations])
+        url_locations.extend([Link(url) for url in _ulocations])
+
+        return file_locations, url_locations
+
+    def _init_locations(self, req):
+        return self._init_locations2(self._init_locations1(req))
+
+    def find_requirement(self, req, upgrade):
+        print 'DEBUG: find_requirement'
+        file_locations, url_locations = self._init_locations(req)
 
         found_versions = []
         found_versions.extend(
@@ -271,7 +281,7 @@ class PackageFinder(object):
             )
         )
         page_versions = []
-        for page in self._get_pages(locations, req):
+        for page in self._get_pages(url_locations, req):
             logger.debug('Analyzing links from page %s', page.url)
             with indent_log():
                 page_versions.extend(
@@ -379,6 +389,7 @@ class PackageFinder(object):
             seen.add(location)
 
             page = self._get_page(location, req)
+            print 'DEBUG got page:', location
             if page is None:
                 continue
 
@@ -596,7 +607,10 @@ class PackageFinder(object):
             return None
 
     def _get_page(self, link, req):
-        return HTMLPage.get_page(link, req, session=self.session)
+        print 'DEBUG getting:', link
+        result = HTMLPage.get_page(link, req, session=self.session)
+        print 'DEBUG got:', link
+        return result
 
 
 class HTMLPage(object):
@@ -612,10 +626,13 @@ class HTMLPage(object):
 
     def __init__(self, content, url, headers=None, trusted=None):
         self.content = content
+        print 'DEBUG HTMLPage: before parse'
         self.parsed = html5lib.parse(self.content, namespaceHTMLElements=False)
+        print 'DEBUG HTMLPage: after parse'
         self.url = url
         self.headers = headers
         self.trusted = trusted
+        print 'HTMLPage done.'
 
     def __str__(self):
         return self.url
@@ -676,7 +693,9 @@ class HTMLPage(object):
                     "Cache-Control": "max-age=600",
                 },
             )
+            print 'DEBUG got response:', resp
             resp.raise_for_status()
+            print 'DEBUG get_page:', 1
 
             # The check for archives above only works if the url ends with
             #   something that looks like an archive. However that is not a
@@ -684,6 +703,7 @@ class HTMLPage(object):
             #   url we cannot know ahead of time for sure if something is HTML
             #   or not. However we can check after we've downloaded it.
             content_type = resp.headers.get('Content-Type', 'unknown')
+            print 'DEBUG get_page:', 2
             if not content_type.lower().startswith("text/html"):
                 logger.debug(
                     'Skipping page %s because of Content-Type: %s',
@@ -692,7 +712,10 @@ class HTMLPage(object):
                 )
                 return
 
+            print 'DEBUG get_page:', 3
+            print 'DEBUG cls', cls
             inst = cls(resp.text, resp.url, resp.headers, trusted=link.trusted)
+            print 'DEBUG after cls.'
         except requests.HTTPError as exc:
             level = 2 if exc.response.status_code == 404 else 1
             cls._handle_fail(req, link, exc, url, level=level)

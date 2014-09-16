@@ -6,6 +6,9 @@ from .controller import CacheController
 from .cache import DictCache
 from .filewrapper import CallbackFileWrapper
 
+counter = 0
+
+C = 'DEBUG CACHE-CONTROL:'
 
 class CacheControlAdapter(HTTPAdapter):
     invalidating_methods = set(['PUT', 'DELETE'])
@@ -103,4 +106,13 @@ class CacheControlAdapter(HTTPAdapter):
         # Give the request a from_cache attr to let people use it
         resp.from_cache = from_cache
 
+        global counter
+        counter += 1
+        print C, counter
+        #import pdb; pdb.set_trace()
         return resp
+
+    def __del__(self):
+        d = self.__dict__
+        for key in d.keys():
+            del d[key]

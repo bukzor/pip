@@ -282,7 +282,9 @@ class PipSession(requests.Session):
         kwargs.setdefault("timeout", self.timeout)
 
         # Dispatch the actual request
-        return super(PipSession, self).request(method, url, *args, **kwargs)
+        result = super(PipSession, self).request(method, url, *args, **kwargs)
+        print 'DEBUG download complete:', url
+        return result
 
 
 def get_file_content(url, comes_from=None, session=None):

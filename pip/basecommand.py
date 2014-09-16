@@ -101,6 +101,10 @@ class Command(object):
         return self.parser.parse_args(args)
 
     def main(self, args):
+        import gc
+        # this gives more information, but prevents reproduction
+        #gc.set_debug(gc.DEBUG_LEAK)
+
         options, args = self.parse_args(args)
 
         if options.quiet:

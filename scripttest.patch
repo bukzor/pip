@@ -1,0 +1,41 @@
+Some patches to make scripttest more verbose, fix debug=True bugs.
+
+--- scripttest.py.orig	2014-09-16 11:30:06.271226666 -0700
++++ /home/buck/venv/pip/lib/python2.7/site-packages/scripttest.py	2014-09-16 11:30:14.267226331 -0700
+@@ -24,14 +24,16 @@
+ 
+ 
+ def string(string):
++    if string is None:
++        return
+     if sys.version_info >= (3,):
+         if isinstance(string, str):
+             return string
+-        return str(string, "utf-8")
++        return str(string, "utf-8").replace('\r\n', '\n')
+     else:
+         if isinstance(string, unicode):
+             return string
+-        return string.decode('utf-8')
++        return string.decode('utf-8').replace('\r\n', '\n')
+ 
+ 
+ # From pathutils by Michael Foord:
+@@ -254,15 +256,15 @@
+                                     shell=(sys.platform == 'win32'),
+                                     env=clean_environ(self.environ))
+ 
++        print 'DEBUG SCRIPTTEST: before'
+         if debug:
+             stdout, stderr = proc.communicate()
+         else:
+             stdout, stderr = proc.communicate(stdin)
++        print 'DEBUG SCRIPTTEST: after'
+         stdout = string(stdout)
+         stderr = string(stderr)
+ 
+-        stdout = string(stdout).replace('\r\n', '\n')
+-        stderr = string(stderr).replace('\r\n', '\n')
+         files_after = self._find_files()
+         result = ProcResult(
+             self, all, stdin, stdout, stderr,

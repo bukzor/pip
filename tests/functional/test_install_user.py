@@ -189,8 +189,11 @@ class Tests_UserSite:
         script.environ["PYTHONPATH"] = script.base_path / script.user_site
         _patch_dist_in_site_packages(script)
 
-        script.pip('install', 'INITools==0.2')
-        result2 = script.pip('install', '--user', '--upgrade', 'INITools')
+        script.pip('install', 'INITools==0.2', debug=True)
+
+        # Adding -vvv here "fixes" the deadlock. I don't know why.
+        ### result2 = script.pip('install', '-vvv', '--user', 'INITools==0.1', debug=True)
+        result2 = script.pip('install', '--user', '--upgrade', 'INITools', debug=True)
 
         # usersite has 0.3.1
         egg_info_folder = (
