@@ -24,6 +24,15 @@ def test_no_mpkg(data):
     assert found.url.endswith("pkgwithmpkg-1.0.tar.gz"), found
 
 
+def test_filesystem_path(data):
+    """Coverage for url_name=None"""
+    finder = PackageFinder([data.find_links], [], session=PipSession())
+    req = InstallRequirement.from_line(data.root / "packages/FSPkg")
+    found = finder.find_requirement(req, False)
+
+    assert found.url.endswith("pkgwithmpkg-1.0.tar.gz"), found
+
+
 def test_no_partial_name_match(data):
     """Finder requires the full project name to match, not just beginning."""
     finder = PackageFinder([data.find_links], [], session=PipSession())
