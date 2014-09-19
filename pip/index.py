@@ -223,25 +223,13 @@ class PackageFinder(object):
                             ctx)
 
     def find_requirement(self, req, upgrade):
-
-        def mkurl_pypi_url(url):
-            loc = posixpath.join(url, url_name)
-            # For maximum compatibility with easy_install, ensure the path
-            # ends in a trailing slash.  Although this isn't in the spec
-            # (and PyPI can handle it without the slash) some other index
-            # implementations might break if they relied on easy_install's
-            # behavior.
-            if not loc.endswith('/'):
-                loc = loc + '/'
-            return loc
-
         url_name = req.url_name
         # Only check main index if index URL is given:
         main_index_url = None
         if self.index_urls:
             # Check that we have the url_name correctly spelled:
             main_index_url = Link(
-                mkurl_pypi_url(self.index_urls[0]),
+                mkurl_pypi_url(self.index_urls[0], url_name),
                 trusted=True,
             )
 
@@ -255,7 +243,7 @@ class PackageFinder(object):
         locations = []
         if url_name is not None:
             locations += [
-                mkurl_pypi_url(url)
+                mkurl_pypi_url(url, url_name)
                 for url in self.index_urls]
 
         locations += self.find_links
@@ -719,6 +707,18 @@ class PackageFinder(object):
 
     def _get_page(self, link, req):
         return HTMLPage.get_page(link, req, session=self.session)
+
+
+def mkurl_pypi_url(url, url_name):
+    loc = posixpath.join(url, url_name)
+    # For maximum compatibility with easy_install, ensure the path
+    # ends in a trailing slash.  Although this isn't in the spec
+    # (and PyPI can handle it without the slash) some other index
+    # implementations might break if they relied on easy_install's
+    # behavior.
+    if not loc.endswith('/'):
+        loc = loc + '/'
+    return loc
 
 
 class HTMLPage(object):
