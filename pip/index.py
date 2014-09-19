@@ -260,11 +260,6 @@ class PackageFinder(object):
 
         locations += self.find_links
 
-        for version in req.absolute_versions:
-            if url_name is not None and main_index_url is not None:
-                locations = [
-                    posixpath.join(main_index_url.url, version)] + locations
-
         file_locations, url_locations = self._sort_locations(locations)
         _flocations, _ulocations = self._sort_locations(self.dependency_links)
         file_locations.extend(_flocations)
