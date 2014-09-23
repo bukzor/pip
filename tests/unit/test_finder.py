@@ -9,6 +9,7 @@ from pip.index import PackageFinder, Link
 from pip.exceptions import (
     BestVersionAlreadyInstalled, DistributionNotFound, InstallationError,
 )
+from pip.finder_funcs import _link_package_versions
 from pip.found import FoundVersion
 from pip.utils import Inf
 from pip.download import PipSession
@@ -619,28 +620,33 @@ class test_link_package_versions(object):
 
     def test_link_package_versions_match_wheel(self):
         """Test that 'pytest' archives match for 'pytest'"""
+        finder = self.finder
 
         # TODO: Uncomment these, when #1217 is fixed
         # link = Link('http:/yo/pytest-1.0.tar.gz')
-        # result = self.finder._link_package_versions(link, self.search_name)
+        # result = _link_package_versions(
+        #     link, self.search_name, finder, finder)
         # assert result == [(self.parsed_version, link, self.version)], result
 
         link = Link('http:/yo/pytest-1.0-py2.py3-none-any.whl')
-        result = self.finder._link_package_versions(link, self.search_name)
+        result = _link_package_versions(link, self.search_name, finder, finder)
         assert result == [(self.parsed_version, link, self.version)], result
 
     def test_link_package_versions_substring_fails(self):
         """Test that 'pytest<something> archives won't match for 'pytest'"""
+        finder = self.finder
 
         # TODO: Uncomment these, when #1217 is fixed
         # link = Link('http:/yo/pytest-xdist-1.0.tar.gz')
-        # result = self.finder._link_package_versions(link, self.search_name)
+        # result = _link_package_versions(
+        #     link, self.search_name, finder, finder)
         # assert result == [], result
 
         # link = Link('http:/yo/pytest2-1.0.tar.gz')
-        # result = self.finder._link_package_versions(link, self.search_name)
+        # result = _link_package_versions(
+        #     link, self.search_name, finder, finder)
         # assert result == [], result
 
         link = Link('http:/yo/pytest_xdist-1.0-py2.py3-none-any.whl')
-        result = self.finder._link_package_versions(link, self.search_name)
+        result = _link_package_versions(link, self.search_name, finder, finder)
         assert result == [], result

@@ -5,6 +5,7 @@ import warnings
 
 from pip.basecommand import Command
 from pip.exceptions import DistributionNotFound
+from pip.finder_funcs import _link_package_versions
 from pip.index import PackageFinder
 from pip.req import InstallRequirement
 from pip.utils import get_installed_distributions, dist_is_editable
@@ -153,8 +154,8 @@ class ListCommand(Command):
                 else:
                     # It might be a good idea that link or finder had a public
                     # method that returned version
-                    found = finder._link_package_versions(
-                        link, req.name
+                    found = _link_package_versions(
+                        link, req.name, finder, finder
                     )[0]
                 yield dist, found
 

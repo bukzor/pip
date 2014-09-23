@@ -26,14 +26,14 @@ class FoundVersion(object):
         return is_prerelease(self.version)
 
     @classmethod
-    def sort(cls, applicable_versions):
+    def sort(cls, versions):
         """
         Bring the latest version (and wheels) to the front, but maintain the
         existing ordering as secondary. See the docstring for `_link_sort_key`
         for details. This function is isolated for easier unit testing.
         """
         return sorted(
-            applicable_versions,
+            versions,
             key=cls._sort_key,
             reverse=True
         )

@@ -2,7 +2,6 @@
 from __future__ import absolute_import
 
 import logging
-import sys
 import os
 import re
 import mimetypes
@@ -16,18 +15,16 @@ if True:  # pylint can't deal with the metapath magic in six.moves
 
 from pip.link import Link
 from pip.finder.installed import InstalledFinder
+from pip.finder.findlinks import FindLinksFinder
+from pip.finder_funcs import _package_versions
 from pip.found import FoundVersion
 from pip.utils import (
     cached_property, normalize_name, splitext,
 )
 from pip.utils.deprecation import RemovedInPip7Warning
 from pip.utils.logging import indent_log
-from pip.exceptions import (
-    DistributionNotFound, BestVersionAlreadyInstalled, InvalidWheelFilename,
-)
+from pip.exceptions import DistributionNotFound, BestVersionAlreadyInstalled
 from pip.download import url_to_path, path_to_url
-from pip.wheel import Wheel, wheel_ext
-from pip.pep425tags import supported_tags_noarch, get_platform
 from pip._vendor import html5lib, requests
 
 
@@ -158,6 +155,7 @@ class PackageFinder(object):
     def _warn_about_insecure_transport_scheme(self, logger, location):
         # These smells are enabling testability here:
         # pylint:disable=no-self-use,redefined-outer-name
+
         # Determine if this url used a secure transport mechanism
         parsed = urllib_parse.urlparse(str(location))
         if parsed.scheme in INSECURE_SCHEMES:
@@ -245,23 +243,18 @@ class PackageFinder(object):
             logger.debug('* %s', location)
             self._warn_about_insecure_transport_scheme(logger, location)
 
-        found_versions = []
-        found_versions.extend(
-            self._package_versions(
-                # We trust every directly linked archive in find_links
-                [Link(url, '-f', trusted=True) for url in self.find_links],
-                req.name.lower()
-            )
-        )
+        found_versions = FindLinksFinder(req, self, self).found
         page_versions = []
         for page in self._get_pages(locations, req):
             logger.debug('Analyzing links from page %s', page.url)
             with indent_log():
                 page_versions.extend(
-                    self._package_versions(page.links, req.name.lower())
+                    _package_versions(page.links, req.name.lower(), self, self)
                 )
-        dependency_versions = list(self._package_versions(
-            [Link(url) for url in self.dependency_links], req.name.lower()))
+        dependency_versions = list(_package_versions(
+            [Link(url) for url in self.dependency_links],
+            req.name.lower(), self, self,
+        ))
         if dependency_versions:
             logger.debug(
                 'dependency_links found: %s',
@@ -270,9 +263,9 @@ class PackageFinder(object):
                 ])
             )
         file_versions = list(
-            self._package_versions(
+            _package_versions(
                 [Link(url) for url in file_locations],
-                req.name.lower()
+                req.name.lower(), self, self,
             )
         )
         if (not found_versions
@@ -395,8 +388,7 @@ class PackageFinder(object):
                 ', '.join([
                     found.version for found
                     in applicable_versions[1:]
-                ]) or 'none'
-            )
+                ]) or 'none')
             raise BestVersionAlreadyInstalled
         if len(applicable_versions) > 1:
             logger.debug(
@@ -496,188 +488,6 @@ class PackageFinder(object):
                     continue
 
                 all_locations.append(link)
-
-    _egg_fragment_re = re.compile(r'#egg=([^&]*)')
-    _egg_info_re = re.compile(r'([a-z0-9_.]+)-([a-z0-9_.-]+)', re.I)
-    _py_version_re = re.compile(r'-py([123]\.?[0-9]?)$')
-
-    @staticmethod
-    def _sort_links(links):
-        """
-        Returns elements of links in order, non-egg links first, egg links
-        second, while eliminating duplicates
-        """
-        eggs, no_eggs = [], []
-        seen = set()
-        for link in links:
-            if link not in seen:
-                seen.add(link)
-                if link.egg_fragment:
-                    eggs.append(link)
-                else:
-                    no_eggs.append(link)
-        return no_eggs + eggs
-
-    def _package_versions(self, links, search_name):
-        for link in self._sort_links(links):
-            for v in self._link_package_versions(link, search_name):
-                yield v
-
-    def _known_extensions(self):
-        extensions = ('.tar.gz', '.tar.bz2', '.tar', '.tgz', '.zip')
-        if self.use_wheel:
-            return extensions + (wheel_ext,)
-        return extensions
-
-    def _link_package_versions(self, link, search_name):
-        """
-        Return an iterable of triples (pkg_resources_version_key,
-        link, python_version) that can be extracted from the given
-        link.
-
-        Meant to be overridden by subclasses, not called by clients.
-        """
-        # FIXME:pylint:disable=too-many-return-statements,too-many-branches,too-many-statements
-        platform = get_platform()
-
-        version = None
-        if link.egg_fragment:
-            egg_info = link.egg_fragment
-        else:
-            egg_info, ext = link.splitext()
-            if not ext:
-                if link not in self.logged_links:
-                    logger.debug('Skipping link %s; not a file', link)
-                    self.logged_links.add(link)
-                return []
-            if egg_info.endswith('.tar'):
-                # Special double-extension case:
-                egg_info = egg_info[:-4]
-                ext = '.tar' + ext
-            if ext not in self._known_extensions():
-                if link not in self.logged_links:
-                    logger.debug(
-                        'Skipping link %s; unknown archive format: %s',
-                        link,
-                        ext,
-                    )
-                    self.logged_links.add(link)
-                return []
-            if "macosx10" in link.path and ext == '.zip':
-                if link not in self.logged_links:
-                    logger.debug('Skipping link %s; macosx10 one', link)
-                    self.logged_links.add(link)
-                return []
-            if ext == wheel_ext:
-                try:
-                    wheel = Wheel(link.filename)
-                except InvalidWheelFilename:
-                    logger.debug(
-                        'Skipping %s because the wheel filename is invalid',
-                        link
-                    )
-                    return []
-                if wheel.name.lower() != search_name.lower():
-                    logger.debug(
-                        'Skipping link %s; wrong project name (not %s)',
-                        link,
-                        search_name,
-                    )
-                    return []
-                if not wheel.supported():
-                    logger.debug(
-                        'Skipping %s because it is not compatible with this '
-                        'Python',
-                        link,
-                    )
-                    return []
-                # This is a dirty hack to prevent installing Binary Wheels from
-                # PyPI unless it is a Windows or Mac Binary Wheel. This is
-                # paired with a change to PyPI disabling uploads for the
-                # same. Once we have a mechanism for enabling support for
-                # binary wheels on linux that deals with the inherent problems
-                # of binary distribution this can be removed.
-                comes_from = getattr(link, "comes_from", None)
-                if (
-                        (
-                            not platform.startswith('win')
-                            and not platform.startswith('macosx')
-                            and not platform == 'cli'
-                        )
-                        and comes_from is not None
-                        and urllib_parse.urlparse(
-                            comes_from.url
-                        ).netloc.endswith("pypi.python.org")):
-                    if not wheel.supported(tags=supported_tags_noarch):
-                        logger.debug(
-                            "Skipping %s because it is a pypi-hosted binary "
-                            "Wheel on an unsupported platform",
-                            link,
-                        )
-                        return []
-                version = wheel.version
-
-        if not version:
-            version = self._egg_info_matches(egg_info, search_name, link)
-        if version is None:
-            logger.debug(
-                'Skipping link %s; wrong project name (not %s)',
-                link,
-                search_name,
-            )
-            return []
-
-        if (link.internal is not None
-                and not link.internal
-                and not normalize_name(search_name).lower()
-                in self.allow_external
-                and not self.allow_all_external):
-            # We have a link that we are sure is external, so we should skip
-            #   it unless we are allowing externals
-            logger.debug("Skipping %s because it is externally hosted.", link)
-            self.need_warn_external = True
-            return []
-
-        if (link.verifiable is not None
-                and not link.verifiable
-                and not (normalize_name(search_name).lower()
-                         in self.allow_unverified)):
-            # We have a link that we are sure we cannot verify its integrity,
-            #   so we should skip it unless we are allowing unsafe installs
-            #   for this requirement.
-            logger.debug(
-                "Skipping %s because it is an insecure and unverifiable file.",
-                link,
-            )
-            self.need_warn_unverified = True
-            return []
-
-        match = self._py_version_re.search(version)
-        if match:
-            version = version[:match.start()]
-            py_version = match.group(1)
-            if py_version != sys.version[:3]:
-                logger.debug(
-                    'Skipping %s because Python version is incorrect', link
-                )
-                return []
-        logger.debug('Found link %s, version: %s', link, version)
-        return [FoundVersion(version, link)]
-
-    def _egg_info_matches(self, egg_info, search_name, link):
-        match = self._egg_info_re.search(egg_info)
-        if not match:
-            logger.debug('Could not parse version from link: %s', link)
-            return None
-        name = match.group(0).lower()
-        # To match the "safe" name that pkg_resources creates:
-        name = name.replace('_', '-')
-        # project name and version must be separated by a dash
-        look_for = search_name.lower() + "-"
-        if name.startswith(look_for):
-            return match.group(0)[len(look_for):]
-        else:
-            return None
 
     def _get_page(self, link, req):
         return HTMLPage.get_page(link, req, session=self.session)
@@ -793,7 +603,6 @@ class HTMLPage(object):
     def _handle_fail(req, link, reason, url, level=1, meth=None):
         # pylint:disable=too-many-arguments
         del url, level
-
         if meth is None:
             meth = logger.debug
 
