@@ -5,10 +5,11 @@ import pip.pep425tags
 
 from pkg_resources import parse_version, Distribution
 from pip.req import InstallRequirement
-from pip.index import PackageFinder, Link, FoundVersion
+from pip.index import PackageFinder, Link
 from pip.exceptions import (
     BestVersionAlreadyInstalled, DistributionNotFound, InstallationError,
 )
+from pip.found import FoundVersion
 from pip.utils import Inf
 from pip.download import PipSession
 

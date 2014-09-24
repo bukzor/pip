@@ -2,7 +2,8 @@ import pytest
 
 from pip.download import PipSession
 from pip.index import package_to_requirement, HTMLPage
-from pip.index import PackageFinder, Link, INSTALLED_VERSION
+from pip.index import PackageFinder
+from pip.link import Link, INSTALLED_VERSION
 
 
 def test_package_name_should_be_converted_to_requirement():

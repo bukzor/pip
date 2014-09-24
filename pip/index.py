@@ -14,19 +14,21 @@ if True:  # pylint can't deal with the metapath magic in six.moves
     from pip._vendor.six.moves.urllib import parse as urllib_parse
     from pip._vendor.six.moves.urllib import request as urllib_request
 
+from pip.link import Link
+from pip.finder.installed import InstalledFinder
+from pip.found import FoundVersion
 from pip.utils import (
-    Inf, cached_property, normalize_name, splitext, is_prerelease,
+    cached_property, normalize_name, splitext,
 )
 from pip.utils.deprecation import RemovedInPip7Warning
 from pip.utils.logging import indent_log
 from pip.exceptions import (
     DistributionNotFound, BestVersionAlreadyInstalled, InvalidWheelFilename,
-    UnsupportedWheel,
 )
 from pip.download import url_to_path, path_to_url
 from pip.wheel import Wheel, wheel_ext
-from pip.pep425tags import supported_tags, supported_tags_noarch, get_platform
-from pip._vendor import html5lib, requests, pkg_resources
+from pip.pep425tags import supported_tags_noarch, get_platform
+from pip._vendor import html5lib, requests
 
 
 __all__ = ['PackageFinder']
@@ -300,12 +302,7 @@ class PackageFinder(object):
             raise DistributionNotFound(
                 'No distributions at all found for %s' % req
             )
-        if req.satisfied_by is None:
-            installed_version = []
-        else:
-            installed_version = [
-                FoundVersion(req.satisfied_by.version, INSTALLED_VERSION)
-            ]
+        installed_version = InstalledFinder(req).found
         if file_versions:
             file_versions = FoundVersion.sort(file_versions)
             logger.debug(
@@ -686,76 +683,6 @@ class PackageFinder(object):
         return HTMLPage.get_page(link, req, session=self.session)
 
 
-class FoundVersion(object):
-    """Represents a version of a package, found at a particular place."""
-
-    def __init__(self, version, link):
-        self.version = version
-        self.link = link
-
-    @cached_property
-    def parsed_version(self):
-        return pkg_resources.parse_version(self.version)
-
-    @cached_property
-    def currently_installed(self):
-        return self.link == INSTALLED_VERSION
-
-    @cached_property
-    def prerelease(self):
-        return is_prerelease(self.version)
-
-    @classmethod
-    def sort(cls, applicable_versions):
-        """
-        Bring the latest version (and wheels) to the front, but maintain the
-        existing ordering as secondary. See the docstring for `_link_sort_key`
-        for details. This function is isolated for easier unit testing.
-        """
-        return sorted(
-            applicable_versions,
-            key=cls._sort_key,
-            reverse=True
-        )
-
-    def _sort_key(self):
-        """
-        Function used to generate link sort key for FoundVersion's.
-        The greater the return value, the more preferred it is.
-        If not finding wheels, then sorted by version only.
-        If finding wheels, then the sort order is by version, then:
-          1. existing installs
-          2. wheels ordered via Wheel.support_index_min()
-          3. source archives
-        Note: it was considered to embed this logic into the Link
-              comparison operators, but then different sdist links
-              with the same version, would have to be considered equal
-        """
-        support_num = len(supported_tags)
-        if self.currently_installed:
-            pri = 1
-        elif self.link.ext == wheel_ext:
-            wheel = Wheel(
-                self.link.filename
-            )  # can raise InvalidWheelFilename
-            if not wheel.supported():
-                raise UnsupportedWheel(
-                    "%s is not a supported wheel for this platform. "
-                    "It can't be sorted." % wheel.filename
-                )
-            pri = -(wheel.support_index_min())
-        else:  # sdist
-            pri = -(support_num)
-        return (self.parsed_version, pri)
-
-    def __repr__(self):
-        return '%s(%r, %r)' % (
-            self.__class__.__name__,
-            self.version,
-            self.link,
-        )
-
-
 class HTMLPage(object):
     """Represents one page, along with its URL"""
 
@@ -986,145 +913,6 @@ class HTMLPage(object):
         % or other characters)."""
         return self._clean_re.sub(
             lambda match: '%%%2x' % ord(match.group(0)), url)
-
-
-class Link(object):
-
-    def __init__(self, url, comes_from=None, internal=None, trusted=None,
-                 _deprecated_regex=False):
-        self.url = url
-        self.comes_from = comes_from
-        self.internal = internal
-        self.trusted = trusted
-        self._deprecated_regex = _deprecated_regex
-
-    def __str__(self):
-        if self.comes_from:
-            return '%s (from %s)' % (self.url, self.comes_from)
-        else:
-            return str(self.url)
-
-    def __repr__(self):
-        return '<Link %s>' % self
-
-    def __eq__(self, other):
-        return self.url == other.url
-
-    def __ne__(self, other):
-        return self.url != other.url
-
-    def __lt__(self, other):
-        return self.url < other.url
-
-    def __le__(self, other):
-        return self.url <= other.url
-
-    def __gt__(self, other):
-        return self.url > other.url
-
-    def __ge__(self, other):
-        return self.url >= other.url
-
-    def __hash__(self):
-        return hash(self.url)
-
-    @property
-    def filename(self):
-        _, netloc, path, _, _ = urllib_parse.urlsplit(self.url)
-        name = posixpath.basename(path.rstrip('/')) or netloc
-        assert name, ('URL %r produced no filename' % self.url)
-        return name
-
-    @property
-    def scheme(self):
-        return urllib_parse.urlsplit(self.url)[0]
-
-    @property
-    def path(self):
-        return urllib_parse.urlsplit(self.url)[2]
-
-    def splitext(self):
-        return splitext(posixpath.basename(self.path.rstrip('/')))
-
-    @property
-    def ext(self):
-        return self.splitext()[1]
-
-    @property
-    def url_without_fragment(self):
-        scheme, netloc, path, query, _ = urllib_parse.urlsplit(self.url)
-        return urllib_parse.urlunsplit((scheme, netloc, path, query, None))
-
-    _egg_fragment_re = re.compile(r'#egg=([^&]*)')
-
-    @property
-    def egg_fragment(self):
-        match = self._egg_fragment_re.search(self.url)
-        if not match:
-            return None
-        return match.group(1)
-
-    _hash_re = re.compile(
-        r'(sha1|sha224|sha384|sha256|sha512|md5)=([a-f0-9]+)'
-    )
-
-    @property
-    def hash(self):
-        match = self._hash_re.search(self.url)
-        if match:
-            return match.group(2)
-        return None
-
-    @property
-    def hash_name(self):
-        match = self._hash_re.search(self.url)
-        if match:
-            return match.group(1)
-        return None
-
-    @property
-    def show_url(self):
-        return posixpath.basename(self.url.split('#', 1)[0].split('?', 1)[0])
-
-    @property
-    def verifiable(self):
-        """
-        Returns True if this link can be verified after download, False if it
-        cannot, and None if we cannot determine.
-        """
-        trusted = self.trusted or getattr(self.comes_from, "trusted", None)
-        if trusted is not None and trusted:
-            # This link came from a trusted source. It *may* be verifiable but
-            #   first we need to see if this page is operating under the new
-            #   API version.
-            try:
-                api_version = getattr(self.comes_from, "api_version", None)
-                api_version = int(api_version)
-            except (ValueError, TypeError):
-                api_version = None
-
-            if api_version is None or api_version <= 1:
-                # This link is either trusted, or it came from a trusted,
-                #   however it is not operating under the API version 2 so
-                #   we can't make any claims about if it's safe or not
-                return
-
-            if self.hash:
-                # This link came from a trusted source and it has a hash, so we
-                #   can consider it safe.
-                return True
-            else:
-                # This link came from a trusted source, using the new API
-                #   version, and it does not have a hash. It is NOT verifiable
-                return False
-        elif trusted is not None:
-            # This link came from an untrusted source and we cannot trust it
-            return False
-
-
-# An object to represent the "link" for the installed version of a requirement.
-# Using Inf as the url makes it sort higher.
-INSTALLED_VERSION = Link(Inf)
 
 
 def get_requirement_from_url(url):
