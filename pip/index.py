@@ -1,4 +1,4 @@
-"""Routines related to PyPI, indexes"""
+"""Routines related to PyPI, indexes"""  # FIXME:pylint:disable=too-many-lines
 from __future__ import absolute_import
 
 import logging
@@ -9,8 +9,10 @@ import mimetypes
 import posixpath
 import warnings
 
-from pip._vendor.six.moves.urllib import parse as urllib_parse
-from pip._vendor.six.moves.urllib import request as urllib_request
+if True:  # pylint can't deal with the metapath magic in six.moves
+    # pylint:disable=import-error
+    from pip._vendor.six.moves.urllib import parse as urllib_parse
+    from pip._vendor.six.moves.urllib import request as urllib_request
 
 from pip.utils import (
     Inf, cached_property, normalize_name, splitext, is_prerelease,
@@ -25,7 +27,6 @@ from pip.download import url_to_path, path_to_url
 from pip.wheel import Wheel, wheel_ext
 from pip.pep425tags import supported_tags, supported_tags_noarch, get_platform
 from pip._vendor import html5lib, requests, pkg_resources
-from pip._vendor.requests.exceptions import SSLError
 
 
 __all__ = ['PackageFinder']
@@ -46,11 +47,13 @@ class PackageFinder(object):
     This is meant to match easy_install's technique for looking for
     packages, by reading pages and looking for appropriate links
     """
+    # FIXME:pylint:disable=too-many-instance-attributes
 
     def __init__(self, find_links, index_urls,
-                 use_wheel=True, allow_external=[], allow_unverified=[],
+                 use_wheel=True, allow_external=(), allow_unverified=(),
                  allow_all_external=False, allow_all_prereleases=False,
                  process_dependency_links=False, session=None):
+        # FIXME:pylint:disable=too-many-arguments
         if session is None:
             raise TypeError(
                 "PackageFinder() missing 1 required keyword argument: "
@@ -150,38 +153,6 @@ class PackageFinder(object):
 
         return files, urls
 
-    def _link_sort_key(self, link_tuple):
-        """
-        Function used to generate link sort key for link tuples.
-        The greater the return value, the more preferred it is.
-        If not finding wheels, then sorted by version only.
-        If finding wheels, then the sort order is by version, then:
-          1. existing installs
-          2. wheels ordered via Wheel.support_index_min()
-          3. source archives
-        Note: it was considered to embed this logic into the Link
-              comparison operators, but then different sdist links
-              with the same version, would have to be considered equal
-        """
-        parsed_version, link, _ = link_tuple
-        if self.use_wheel:
-            support_num = len(supported_tags)
-            if link == INSTALLED_VERSION:
-                pri = 1
-            elif link.ext == wheel_ext:
-                wheel = Wheel(link.filename)  # can raise InvalidWheelFilename
-                if not wheel.supported():
-                    raise UnsupportedWheel(
-                        "%s is not a supported wheel for this platform. It "
-                        "can't be sorted." % wheel.filename
-                    )
-                pri = -(wheel.support_index_min())
-            else:  # sdist
-                pri = -(support_num)
-            return (parsed_version, pri)
-        else:
-            return parsed_version
-
     def _sort_versions(self, applicable_versions):
         """
         Bring the latest version (and wheels) to the front, but maintain the
@@ -190,11 +161,13 @@ class PackageFinder(object):
         """
         return sorted(
             applicable_versions,
-            key=self._link_sort_key,
+            key=FoundVersion.sort_key,
             reverse=True
         )
 
     def _warn_about_insecure_transport_scheme(self, logger, location):
+        # These smells are enabling testability here:
+        # pylint:disable=no-self-use,redefined-outer-name
         # Determine if this url used a secure transport mechanism
         parsed = urllib_parse.urlparse(str(location))
         if parsed.scheme in INSECURE_SCHEMES:
@@ -225,6 +198,7 @@ class PackageFinder(object):
                             ctx)
 
     def find_requirement(self, req, upgrade):
+        # FIXME:pylint:disable=too-many-locals,too-many-branches,too-many-statements
 
         def mkurl_pypi_url(url):
             loc = posixpath.join(url, url_name)
@@ -302,7 +276,7 @@ class PackageFinder(object):
             logger.debug(
                 'dependency_links found: %s',
                 ', '.join([
-                    link.url for p, link, version in dependency_versions
+                    found.link.url for found in dependency_versions
                 ])
             )
         file_versions = list(
@@ -338,56 +312,54 @@ class PackageFinder(object):
             raise DistributionNotFound(
                 'No distributions at all found for %s' % req
             )
-        installed_version = []
-        if req.satisfied_by is not None:
-            installed_version = [(
-                req.satisfied_by.parsed_version,
-                INSTALLED_VERSION,
-                req.satisfied_by.version,
-            )]
+        if req.satisfied_by is None:
+            installed_version = []
+        else:
+            installed_version = [
+                FoundVersion(req.satisfied_by.version, INSTALLED_VERSION)
+            ]
         if file_versions:
-            file_versions.sort(reverse=True)
+            file_versions = self._sort_versions(file_versions)
             logger.debug(
                 'Local files found: %s',
                 ', '.join([
-                    url_to_path(link.url)
-                    for _, link, _ in file_versions
+                    url_to_path(found.link.url)
+                    for found in file_versions
                 ])
             )
         # this is an intentional priority ordering
         all_versions = installed_version + file_versions + found_versions \
             + page_versions + dependency_versions
         applicable_versions = []
-        for (parsed_version, link, version) in all_versions:
-            if version not in req.req:
+        for found in all_versions:
+            if found.version not in req.req:
                 logger.debug(
                     "Ignoring link %s, version %s doesn't match %s",
-                    link,
-                    version,
+                    found.link,
+                    found.version,
                     ','.join([''.join(s) for s in req.req.specs]),
                 )
                 continue
-            elif (is_prerelease(version)
-                    and not (self.allow_all_prereleases or req.prereleases)):
+            elif (found.prerelease
+                  and not (self.allow_all_prereleases or req.prereleases)):
                 # If this version isn't the already installed one, then
                 #   ignore it if it's a pre-release.
-                if link is not INSTALLED_VERSION:
+                if not found.currently_installed:
                     logger.debug(
                         "Ignoring link %s, version %s is a pre-release (use "
                         "--pre to allow).",
-                        link,
-                        version,
+                        found.link,
+                        found.version,
                     )
                     continue
-            applicable_versions.append((parsed_version, link, version))
+            applicable_versions.append(found)
         applicable_versions = self._sort_versions(applicable_versions)
-        existing_applicable = bool([
-            link
-            for parsed_version, link, version in applicable_versions
-            if link is INSTALLED_VERSION
-        ])
+        existing_applicable = any(
+            found.currently_installed
+            for found in applicable_versions
+        )
         if not upgrade and existing_applicable:
-            if applicable_versions[0][1] is INSTALLED_VERSION:
+            if applicable_versions.currently_installed:
                 logger.debug(
                     'Existing installed version (%s) is most up-to-date and '
                     'satisfies requirement',
@@ -398,7 +370,7 @@ class PackageFinder(object):
                     'Existing installed version (%s) satisfies requirement '
                     '(most up-to-date version is %s)',
                     req.satisfied_by.version,
-                    applicable_versions[0][2],
+                    applicable_versions[0].version,
                 )
             return None
         if not applicable_versions:
@@ -408,8 +380,8 @@ class PackageFinder(object):
                 req,
                 ', '.join(
                     sorted(set([
-                        version
-                        for parsed_version, link, version in all_versions
+                        found.version
+                        for found in all_versions
                     ]))),
             )
 
@@ -429,28 +401,29 @@ class PackageFinder(object):
             raise DistributionNotFound(
                 'No distributions matching the version for %s' % req
             )
-        if applicable_versions[0][1] is INSTALLED_VERSION:
-            # We have an existing version, and its the best version
+        if applicable_versions[0].currently_installed:
+            # We have an existing version, and it is the best version
             logger.debug(
                 'Installed version (%s) is most up-to-date (past versions: '
                 '%s)',
                 req.satisfied_by.version,
                 ', '.join([
-                    version for parsed_version, link, version
+                    found.version for found
                     in applicable_versions[1:]
-                ]) or 'none'),
+                ]) or 'none'
+            )
             raise BestVersionAlreadyInstalled
         if len(applicable_versions) > 1:
             logger.debug(
                 'Using version %s (newest of versions: %s)',
-                applicable_versions[0][2],
+                applicable_versions[0].version,
                 ', '.join([
-                    version for parsed_version, link, version
+                    found.version for found
                     in applicable_versions
                 ])
             )
 
-        selected_version = applicable_versions[0][1]
+        selected_version = applicable_versions[0].link
 
         if (selected_version.verifiable is not None
                 and not selected_version.verifiable):
@@ -458,6 +431,7 @@ class PackageFinder(object):
                 "%s is potentially insecure and unverifiable.", req.name,
             )
 
+        # pylint:disable=protected-access
         if selected_version._deprecated_regex:
             warnings.warn(
                 "%s discovered using a deprecated method of parsing, in the "
@@ -542,7 +516,8 @@ class PackageFinder(object):
     _egg_info_re = re.compile(r'([a-z0-9_.]+)-([a-z0-9_.-]+)', re.I)
     _py_version_re = re.compile(r'-py([123]\.?[0-9]?)$')
 
-    def _sort_links(self, links):
+    @staticmethod
+    def _sort_links(links):
         """
         Returns elements of links in order, non-egg links first, egg links
         second, while eliminating duplicates
@@ -577,6 +552,7 @@ class PackageFinder(object):
 
         Meant to be overridden by subclasses, not called by clients.
         """
+        # FIXME:pylint:disable=too-many-return-statements,too-many-branches,too-many-statements
         platform = get_platform()
 
         version = None
@@ -701,11 +677,7 @@ class PackageFinder(object):
                 )
                 return []
         logger.debug('Found link %s, version: %s', link, version)
-        return [(
-            pkg_resources.parse_version(version),
-            link,
-            version,
-        )]
+        return [FoundVersion(version, link)]
 
     def _egg_info_matches(self, egg_info, search_name, link):
         match = self._egg_info_re.search(egg_info)
@@ -724,6 +696,63 @@ class PackageFinder(object):
 
     def _get_page(self, link, req):
         return HTMLPage.get_page(link, req, session=self.session)
+
+
+class FoundVersion(object):
+    """Represents a version of a package, found at a particular place."""
+
+    def __init__(self, version, link):
+        self.version = version
+        self.link = link
+
+    @cached_property
+    def parsed_version(self):
+        return pkg_resources.parse_version(self.version)
+
+    @cached_property
+    def currently_installed(self):
+        return self.link == INSTALLED_VERSION
+
+    @cached_property
+    def prerelease(self):
+        return is_prerelease(self.version)
+
+    def sort_key(self):
+        """
+        Function used to generate link sort key for FoundVersion's.
+        The greater the return value, the more preferred it is.
+        If not finding wheels, then sorted by version only.
+        If finding wheels, then the sort order is by version, then:
+          1. existing installs
+          2. wheels ordered via Wheel.support_index_min()
+          3. source archives
+        Note: it was considered to embed this logic into the Link
+              comparison operators, but then different sdist links
+              with the same version, would have to be considered equal
+        """
+        support_num = len(supported_tags)
+        if self.currently_installed:
+            pri = 1
+        elif self.link.ext == wheel_ext:
+            wheel = Wheel(
+                self.link.filename
+            )  # can raise InvalidWheelFilename
+            if not wheel.supported():
+                raise UnsupportedWheel(
+                    "%s is not a supported wheel for this platform. "
+                    "It can't be sorted." % wheel.filename
+                )
+            pri = -(wheel.support_index_min())
+        else:  # sdist
+            pri = -(support_num)
+        return (self.parsed_version, pri)
+
+    def __repr__(self):
+        return '%s(%r, %r)' % (
+            self.__class__.__name__,
+            self.version,
+            self.link,
+        )
 
 
 class HTMLPage(object):
@@ -749,6 +778,7 @@ class HTMLPage(object):
 
     @classmethod
     def get_page(cls, link, req, skip_archives=True, session=None):
+        # FIXME:pylint:disable=too-many-locals,too-many-branches
         if session is None:
             raise TypeError(
                 "get_page() missing 1 required keyword argument: 'session'"
@@ -785,8 +815,7 @@ class HTMLPage(object):
             logger.debug('Getting page %s', url)
 
             # Tack index.html onto file:// URLs that point to directories
-            (scheme, netloc, path, params, query, fragment) = \
-                urllib_parse.urlparse(url)
+            (scheme, _, path, _, _, _) = urllib_parse.urlparse(url)
             if (scheme == 'file'
                     and os.path.isdir(urllib_request.url2pathname(path))):
                 # add trailing slash if not present so urljoin doesn't trim
@@ -829,30 +858,25 @@ class HTMLPage(object):
             )
         except requests.Timeout:
             cls._handle_fail(req, link, "timed out", url)
-        except SSLError as exc:
-            reason = ("There was a problem confirming the ssl certificate: "
-                      "%s" % exc)
-            cls._handle_fail(
-                req, link, reason, url,
-                level=2,
-                meth=logger.info,
-            )
         else:
             return inst
 
     @staticmethod
     def _handle_fail(req, link, reason, url, level=1, meth=None):
+        # pylint:disable=too-many-arguments
+        del url, level
+
         if meth is None:
             meth = logger.debug
 
         meth("Could not fetch URL %s: %s", link, reason)
-        meth("Will skip URL %s when looking for download links for %s" %
-             (link.url, req))
+        meth("Will skip URL %s when looking for download links for %s",
+             link.url, req)
 
     @staticmethod
     def _get_content_type(url, session):
         """Get the Content-Type of the given url, using a HEAD request"""
-        scheme, netloc, path, query, fragment = urllib_parse.urlsplit(url)
+        scheme = urllib_parse.urlsplit(url)[0]
         if scheme not in ('http', 'https', 'ftp', 'ftps'):
             # FIXME: some warning or something?
             # assertion error?
@@ -1027,7 +1051,7 @@ class Link(object):
 
     @property
     def url_without_fragment(self):
-        scheme, netloc, path, query, fragment = urllib_parse.urlsplit(self.url)
+        scheme, netloc, path, query, _ = urllib_parse.urlsplit(self.url)
         return urllib_parse.urlunsplit((scheme, netloc, path, query, None))
 
     _egg_fragment_re = re.compile(r'#egg=([^&]*)')
