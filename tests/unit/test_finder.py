@@ -103,6 +103,7 @@ def test_finder_detects_latest_already_satisfied_pypi_links():
         finder.find_requirement(req, True)
 
 
+# pylint:disable=old-style-class,no-init,no-self-use
 class TestWheel:
 
     def test_skip_invalid_wheel_link(self, caplog, data):
@@ -164,9 +165,8 @@ class TestWheel:
             session=PipSession(),
         )
         found = finder.find_requirement(req, True)
-        assert (
-            found.url.endswith("simple.dist-0.1-py2.py3-none-any.whl"), found
-        )
+        assert found.url.endswith("simple.dist-0.1-py2.py3-none-any.whl"), \
+            found
 
     def test_wheel_over_sdist_priority(self, data):
         """
@@ -544,7 +544,7 @@ def test_finder_finds_external_links_without_hashes_all_all_insecure(data):
     assert link.filename == "bar-3.0.tar.gz"
 
 
-def test_finder_finds_external_links_without_hashes_scraped_per_project_all_insecure(data):  # noqa
+def test_finder_finds_external_links_without_hashes_scraped_per_project_all_insecure(data):  # noqa:pylint:disable=line-too-long
     """
     Tests that PackageFinder finds externally scraped links
     """
@@ -608,6 +608,7 @@ class test_link_package_versions(object):
         lambda x: Distribution(project_name='setuptools', version='0.9')
     )
     def setup(self):
+        # pylint:disable=attribute-defined-outside-init
         self.version = '1.0'
         self.parsed_version = parse_version(self.version)
         self.search_name = 'pytest'

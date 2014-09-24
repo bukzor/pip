@@ -19,7 +19,8 @@ max-statements=50
 min-public-methods=0
 
 [BASIC]
-const-rgx=(([A-Za-z_][A-Za-z0-9_]*)|(__.*__))$
-function-rgx=[a-z_][a-z0-9_]{2,60}$
+const-rgx=(([a-zA-Z_][a-zA-Z0-9_]*)|(__.*__))$
+function-rgx=[a-z_][a-z0-9_]{2,90}$
 method-rgx=(%(function-rgx)s|%(const-rgx)s)
 variable-rgx=[a-z_][a-z0-9_]{0,30}$
+class-rgx=[a-zA-Z_][a-zA-Z0-9_]+$

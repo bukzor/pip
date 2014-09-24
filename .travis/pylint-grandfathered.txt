@@ -69,7 +69,6 @@
 ./tests/functional/test_install_upgrade.py
 ./tests/functional/test_install_user.py
 ./tests/functional/test_install_vcs.py
-./tests/functional/test_search.py
 ./tests/functional/test_uninstall.py
 ./tests/functional/test_uninstall_user.py
 ./tests/lib.py
@@ -84,7 +83,6 @@
 ./tests/unit/test_basecommand.py
 ./tests/unit/test_compat.py
 ./tests/unit/test_download.py
-./tests/unit/test_finder.py
 ./tests/unit/test_index.py
 ./tests/unit/test_locations.py
 ./tests/unit/test_options.py
