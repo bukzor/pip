@@ -225,8 +225,8 @@ class TestWheel:
         finder = PackageFinder([], [], session=PipSession())
         finder.use_wheel = True
 
-        results = finder._sort_versions(links)
-        results2 = finder._sort_versions(reversed(links))
+        results = FoundVersion.sort(links)
+        results2 = FoundVersion.sort(reversed(links))
 
         assert links == results == results2, results2
 
@@ -235,9 +235,8 @@ class TestWheel:
         links = [
             FoundVersion('1.0', Link('simple-1.0-py2.py3-none-TEST.whl')),
         ]
-        finder = PackageFinder([], [], use_wheel=True, session=PipSession())
         with pytest.raises(InstallationError):
-            finder._sort_versions(links)
+            FoundVersion.sort(links)
 
 
 def test_finder_priority_file_over_page(data):

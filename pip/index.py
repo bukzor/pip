@@ -153,18 +153,6 @@ class PackageFinder(object):
 
         return files, urls
 
-    def _sort_versions(self, applicable_versions):
-        """
-        Bring the latest version (and wheels) to the front, but maintain the
-        existing ordering as secondary. See the docstring for `_link_sort_key`
-        for details. This function is isolated for easier unit testing.
-        """
-        return sorted(
-            applicable_versions,
-            key=FoundVersion.sort_key,
-            reverse=True
-        )
-
     def _warn_about_insecure_transport_scheme(self, logger, location):
         # These smells are enabling testability here:
         # pylint:disable=no-self-use,redefined-outer-name
@@ -319,7 +307,7 @@ class PackageFinder(object):
                 FoundVersion(req.satisfied_by.version, INSTALLED_VERSION)
             ]
         if file_versions:
-            file_versions = self._sort_versions(file_versions)
+            file_versions = FoundVersion.sort(file_versions)
             logger.debug(
                 'Local files found: %s',
                 ', '.join([
@@ -353,7 +341,7 @@ class PackageFinder(object):
                     )
                     continue
             applicable_versions.append(found)
-        applicable_versions = self._sort_versions(applicable_versions)
+        applicable_versions = FoundVersion.sort(applicable_versions)
         existing_applicable = any(
             found.currently_installed
             for found in applicable_versions
@@ -717,7 +705,20 @@ class FoundVersion(object):
     def prerelease(self):
         return is_prerelease(self.version)
 
-    def sort_key(self):
+    @classmethod
+    def sort(cls, applicable_versions):
+        """
+        Bring the latest version (and wheels) to the front, but maintain the
+        existing ordering as secondary. See the docstring for `_link_sort_key`
+        for details. This function is isolated for easier unit testing.
+        """
+        return sorted(
+            applicable_versions,
+            key=cls._sort_key,
+            reverse=True
+        )
+
+    def _sort_key(self):
         """
         Function used to generate link sort key for FoundVersion's.
         The greater the return value, the more preferred it is.
